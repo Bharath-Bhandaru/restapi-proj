@@ -66,7 +66,7 @@ const App = () => {
 
   const fetchLocations = async () => {
     try {
-      const response = await fetch("http://192.168.65.11:5000/api/locations");
+      const response = await fetch("http://192.168.65.11:5000/api/locations");    //change IP here
       const data = await response.json();
       setLocations(data);
     } catch (error) {
@@ -124,7 +124,7 @@ const App = () => {
       return;
     }
     try {
-      const response = await fetch(`http://192.168.65.11:5000/api/search-location?name=${query.toLowerCase()}`);
+      const response = await fetch(`http://192.168.65.11:5000/api/search-location?name=${query.toLowerCase()}`);   //change IP here
       const data = await response.json();
       if (data.latitude && data.longitude) {
         setMapLocation({ lat: data.latitude, lng: data.longitude });
@@ -134,7 +134,7 @@ const App = () => {
         setFromCoords([data.latitude, data.longitude]);
       } else {
         alert("Location not found. Try a different search term.");
-        setSearchResult(null); // Clear search result if not found
+        setSearchResult(null); d
       }
     } catch (error) {
       console.error("Error fetching location:", error);
@@ -147,7 +147,7 @@ const App = () => {
       return;
     }
     try {
-      const response = await fetch("http://192.168.65.11:5000/api/distance", {
+      const response = await fetch("http://192.168.65.11:5000/api/distance", { //change IP here
         method: "POST",
         headers: {
           "Content-Type": "application/json",
