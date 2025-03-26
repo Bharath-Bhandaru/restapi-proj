@@ -1,25 +1,19 @@
+# my-globe-app/Dockerfile
+
 # Base image
-FROM node:18
+FROM node:18-alpine as build
 
 # Set working directory
 WORKDIR /app
 
-# Copy backend package files & install
-COPY package*.json ./
-RUN npm install
-
-# Copy frontend code & build
-COPY my-globe-app ./my-globe-app
-RUN cd my-globe-app && npm install && npm run build
-
-# Copy backend and other files (like server.js)
+# Copy files
 COPY . .
 
-# Serve frontend build as static files
-RUN mkdir -p public && cp -r my-globe-app/dist/* public/
+# Install and build
+RUN npm install && npm run build
 
-# Expose port
-EXPOSE 5000
-
-# Start backend
-CMD ["node", "server.js"]
+# Serve using Nginx
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
