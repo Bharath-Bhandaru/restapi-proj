@@ -1,11 +1,22 @@
-require("dotenv").config();
-const express = require("express");
+const express = require("expres");
+const path = require("path");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const geolib = require("geolib");
 
-const app = express();
+const app = express(); // ✅ Make sure this is at the top
+
+// Serve the frontend static buil
+app.use(express.static(path.join(__dirname, "my-globe-app/dist")));
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "my-globe-app/dist/index.html"));
+});
+
+
+//const app = express();
+
 
 // ✅ Set up CORS to allow frontend requests
 const corsOptions = {
