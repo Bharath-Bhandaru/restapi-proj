@@ -1,0 +1,69 @@
+pipeline {
+  agent any
+
+  environment {
+    IMAGE_NAME = "globe-app"
+    CONTAINER_NAME = "globe-running"
+    BACKUP_IMAGE = "globe-app:backup"
+  }
+
+  stages {
+    stage('Clone Repository') {
+      steps {
+        git branch: 'master', url: 'https://github.com/Bharath-Bhandaru/restapi-proj.git'
+      }
+    }
+
+    stage('Backup Current Image') {
+      steps {
+        script {
+          sh "docker tag $IMAGE_NAME $BACKUP_IMAGE || true"
+        }
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        sh 'docker build -t $IMAGE_NAME .'
+      }
+    }
+
+    stage('Stop & Remove Old Container') {
+      steps {
+        script {
+          sh "docker stop $CONTAINER_NAME || true"
+          sh "docker rm $CONTAINER_NAME || true"
+        }
+      }
+    }
+
+    stage('Run New Container') {
+      steps {
+        script {
+          sh """
+            docker run -d \
+            --name $CONTAINER_NAME \
+            -p 5000:5000 \
+            $IMAGE_NAME
+          """
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "✅ Deployment successful!"
+      archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
+    }
+
+    failure {
+      echo "❌ Build or deployment failed. Rolling back..."
+      sh """
+        docker stop $CONTAINER_NAME || true
+        docker rm $CONTAINER_NAME || true
+        docker run -d --name $CONTAINER_NAME -p 5000:5000 $BACKUP_IMAGE || true
+      """
+    }
+  }
+}
