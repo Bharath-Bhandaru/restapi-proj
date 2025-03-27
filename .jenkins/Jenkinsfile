@@ -13,25 +13,40 @@ pipeline {
       }
     }
     
+    stage('Cleanup Previous Deployment') {
+      steps {
+        script {
+          // Force remove any existing containers and networks
+          sh """
+            docker stop ${CONTAINER_NAME} || true
+            docker rm -f ${CONTAINER_NAME} || true
+            docker stop mongo || true
+            docker rm -f mongo || true
+            docker network rm auto-deploy_default || true
+          """
+        }
+      }
+    }
+    
     stage('Backup Current Deployment') {
       steps {
         script {
-          sh "docker tag $IMAGE_NAME $BACKUP_IMAGE || true"
-          sh "docker-compose -f $COMPOSE_FILE down || true"
+          sh "docker tag ${IMAGE_NAME} ${BACKUP_IMAGE} || true"
         }
       }
     }
     
     stage('Build and Test') {
       steps {
-        sh 'docker-compose -f $COMPOSE_FILE build'
+        sh 'docker-compose -f ${COMPOSE_FILE} build --no-cache'
       }
     }
     
     stage('Deploy') {
       steps {
         sh """
-          docker-compose -f $COMPOSE_FILE up -d
+          docker-compose -f ${COMPOSE_FILE} down || true
+          docker-compose -f ${COMPOSE_FILE} up -d --remove-orphans
         """
       }
     }
@@ -44,12 +59,14 @@ pipeline {
     failure {
       echo "❌ Build or deployment failed. Rolling back..."
       script {
-        sh "docker-compose -f $COMPOSE_FILE down || true"
         sh """
-          docker run -d \
-          --name $CONTAINER_NAME \
-          -p 5000:5000 \
-          $BACKUP_IMAGE || true
+          docker-compose -f ${COMPOSE_FILE} down || true
+          docker stop ${CONTAINER_NAME} || true
+          docker rm -f ${CONTAINER_NAME} || true
+          docker stop mongo || true
+          docker rm -f mongo || true
+          docker network rm auto-deploy_default || true
+          docker run -d --name ${CONTAINER_NAME} -p 5000:5000 ${BACKUP_IMAGE} || true
         """
       }
     }
