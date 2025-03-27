@@ -5,123 +5,68 @@ pipeline {
     CONTAINER_NAME = "globe-running"
     BACKUP_IMAGE = "globe-app:backup"
     COMPOSE_FILE = "docker-compose.yml"
-    // Add Node.js to PATH if needed
-    PATH = "/usr/bin/node:/usr/bin/npm:${env.PATH}"
-  }
-  options {
-    timeout(time: 30, unit: 'MINUTES')  // Set overall timeout
-    retry(2)  // Retry entire pipeline up to 2 times on failure
   }
   stages {
     stage('Clone Repository') {
       steps {
-        git branch: 'master', 
-        url: 'https://github.com/Bharath-Bhandaru/restapi-proj.git',
-        poll: true  // Enable polling for automatic builds
+        git branch: 'master', url: 'https://github.com/Bharath-Bhandaru/restapi-proj.git'
       }
     }
     
-    stage('Verify Environment') {
+    stage('Cleanup Previous Deployment') {
       steps {
         script {
-          try {
-            sh """
-              echo "Node.js version:"
-              node --version
-              echo "npm version:"
-              npm --version
-              echo "Docker version:"
-              docker --version
-              echo "docker-compose version:"
-              docker-compose --version
-            """
-          } catch (err) {
-            error("Required tools not installed: ${err}")
-          }
-        }
-      }
-    }
-    
-    stage('Install Frontend Dependencies') {
-      steps {
-        script {
-          dir('my-globe-app') {
-            timeout(time: 10, unit: 'MINUTES') {
-              sh """
-                echo "Installing frontend dependencies..."
-                npm install --verbose --no-audit
-                echo "Building frontend..."
-                npm run build
-              """
-            }
-          }
-        }
-      }
-    }
-    
-    stage('Install Backend Dependencies') {
-      steps {
-        timeout(time: 5, unit: 'MINUTES') {
+          // Force remove any existing containers and networks
           sh """
-            echo "Installing backend dependencies..."
-            npm install --verbose --no-audit
+            docker stop ${CONTAINER_NAME} || true
+            docker rm -f ${CONTAINER_NAME} || true
+            docker stop mongo || true
+            docker rm -f mongo || true
+            docker network rm auto-deploy_default || true
           """
         }
       }
     }
     
-    stage('Run Tests') {
+    stage('Backup Current Deployment') {
       steps {
-        timeout(time: 5, unit: 'MINUTES') {
-          sh """
-            echo "Running tests..."
-            npm test || { echo "Tests failed"; exit 1; }
-          """
+        script {
+          sh "docker tag ${IMAGE_NAME} ${BACKUP_IMAGE} || true"
         }
       }
     }
     
-    stage('Docker Build & Deploy') {
-      when {
-        expression { currentBuild.resultIsBetterOrEqualTo('SUCCESS') }
-      }
+    stage('Build and Test') {
       steps {
-        script {
-          timeout(time: 15, unit: 'MINUTES') {
-            sh """
-              echo "Stopping any existing containers..."
-              docker-compose -f ${COMPOSE_FILE} down || true
-              
-              echo "Building new Docker images..."
-              docker-compose -f ${COMPOSE_FILE} build --no-cache
-              
-              echo "Starting services..."
-              docker-compose -f ${COMPOSE_FILE} up -d --remove-orphans
-            """
-          }
-        }
+        sh 'docker-compose -f ${COMPOSE_FILE} build --no-cache'
+      }
+    }
+    
+    stage('Deploy') {
+      steps {
+        sh """
+          docker-compose -f ${COMPOSE_FILE} down || true
+          docker-compose -f ${COMPOSE_FILE} up -d --remove-orphans
+        """
       }
     }
   }
   post {
-    always {
-      echo "Cleaning up workspace..."
-      cleanWs()
-    }
     success {
       echo "✅ Deployment successful!"
-      archiveArtifacts artifacts: '**/test-results.xml', allowEmptyArchive: true
+      archiveArtifacts artifacts: '*/.log', allowEmptyArchive: true
     }
     failure {
-      echo "❌ Build or deployment failed"
+      echo "❌ Build or deployment failed. Rolling back..."
       script {
-        // Try to restart previous working version if it exists
         sh """
-          docker inspect ${BACKUP_IMAGE} >/dev/null 2>&1 && {
-            echo "Restoring previous version..."
-            docker-compose -f ${COMPOSE_FILE} down || true
-            docker run -d --name ${CONTAINER_NAME} -p 5000:5000 ${BACKUP_IMAGE}
-          } || echo "No backup image found"
+          docker-compose -f ${COMPOSE_FILE} down || true
+          docker stop ${CONTAINER_NAME} || true
+          docker rm -f ${CONTAINER_NAME} || true
+          docker stop mongo || true
+          docker rm -f mongo || true
+          docker network rm auto-deploy_default || true
+          docker run -d --name ${CONTAINER_NAME} -p 5000:5000 ${BACKUP_IMAGE} || true
         """
       }
     }
