@@ -5,6 +5,7 @@ pipeline {
     CONTAINER_NAME = "globe-running"
     BACKUP_IMAGE = "globe-app:backup"
     COMPOSE_FILE = "docker-compose.yml"
+    NODE_VERSION = '18' // Specify Node version for non-Docker test
   }
   stages {
     stage('Clone Repository') {
@@ -13,10 +14,28 @@ pipeline {
       }
     }
     
-    stage('Cleanup Previous Deployment') {
+    stage('Install Dependencies & Test') {
       steps {
         script {
-          // Force remove any existing containers and networks
+          // Test backend without Docker
+          sh """
+            nvm install ${NODE_VERSION} || true
+            nvm use ${NODE_VERSION} || true
+            cd my-globe-app && npm install && npm run build
+            cd ..
+            npm install
+            npm test || { echo '❌ Tests failed'; exit 1; }
+          """
+        }
+      }
+    }
+    
+    stage('Cleanup Previous Deployment') {
+      when {
+        expression { currentBuild.resultIsBetterOrEqualTo('SUCCESS') }
+      }
+      steps {
+        script {
           sh """
             docker stop ${CONTAINER_NAME} || true
             docker rm -f ${CONTAINER_NAME} || true
@@ -29,20 +48,29 @@ pipeline {
     }
     
     stage('Backup Current Deployment') {
+      when {
+        expression { currentBuild.resultIsBetterOrEqualTo('SUCCESS') }
+      }
       steps {
         script {
-          sh "docker tag ${IMAGE_NAME} ${BACKUP_IMAGE} || true"
+          sh "docker inspect ${IMAGE_NAME} >/dev/null 2>&1 && docker tag ${IMAGE_NAME} ${BACKUP_IMAGE} || true"
         }
       }
     }
     
-    stage('Build and Test') {
+    stage('Build Docker Image') {
+      when {
+        expression { currentBuild.resultIsBetterOrEqualTo('SUCCESS') }
+      }
       steps {
         sh 'docker-compose -f ${COMPOSE_FILE} build --no-cache'
       }
     }
     
     stage('Deploy') {
+      when {
+        expression { currentBuild.resultIsBetterOrEqualTo('SUCCESS') }
+      }
       steps {
         sh """
           docker-compose -f ${COMPOSE_FILE} down || true
@@ -54,19 +82,18 @@ pipeline {
   post {
     success {
       echo "✅ Deployment successful!"
-      archiveArtifacts artifacts: '*/.log', allowEmptyArchive: true
+      archiveArtifacts artifacts: '**/test-results.xml', allowEmptyArchive: true
     }
     failure {
-      echo "❌ Build or deployment failed. Rolling back..."
+      echo "❌ Build or tests failed. Existing Docker containers remain unchanged."
       script {
+        // Attempt to restart previous containers if they existed
         sh """
-          docker-compose -f ${COMPOSE_FILE} down || true
-          docker stop ${CONTAINER_NAME} || true
-          docker rm -f ${CONTAINER_NAME} || true
-          docker stop mongo || true
-          docker rm -f mongo || true
-          docker network rm auto-deploy_default || true
-          docker run -d --name ${CONTAINER_NAME} -p 5000:5000 ${BACKUP_IMAGE} || true
+          docker inspect ${BACKUP_IMAGE} >/dev/null 2>&1 && {
+            docker stop ${CONTAINER_NAME} || true
+            docker rm -f ${CONTAINER_NAME} || true
+            docker run -d --name ${CONTAINER_NAME} -p 5000:5000 ${BACKUP_IMAGE}
+          } || true
         """
       }
     }
