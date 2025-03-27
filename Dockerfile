@@ -1,19 +1,32 @@
-# my-globe-app/Dockerfile
+# Multi-stage build
 
-# Base image
-FROM node:18-alpine as build
+# Stage 1: Build frontend
+FROM node:18-alpine as frontend-builder
+WORKDIR /app/frontend
+COPY my-globe-app/package.json my-globe-app/package-lock.json ./
+RUN npm install
+COPY my-globe-app .
+RUN npm run build
 
-# Set working directory
+# Stage 2: Build backend
+FROM node:18-alpine as backend-builder
+WORKDIR /app/backend
+COPY package.json package-lock.json ./
+RUN npm install
+COPY server.js ./
+
+# Stage 3: Final image
+FROM node:18-alpine
 WORKDIR /app
 
-# Copy files
-COPY . .
+# Copy backend
+COPY --from=backend-builder /app/backend /app
+# Copy built frontend
+COPY --from=frontend-builder /app/frontend/dist /app/public
 
-# Install and build
-RUN npm install && npm run build
+# Environment variables
+ENV PORT=5000
+ENV MONGO_URI=mongodb://mongo:27017/geoapp
 
-# Serve using Nginx
-FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 5000
+CMD ["node", "server.js"]

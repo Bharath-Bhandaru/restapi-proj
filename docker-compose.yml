@@ -1,29 +1,22 @@
 version: '3.8'
 services:
-  frontend:
-    image: globe-app:latest
-    container_name: globe-running
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-  
-  backend:
+  app:
     build: .
+    image: globe-app
+    container_name: globe-running
     ports:
       - "5000:5000"
     environment:
       - MONGO_URI=mongodb://mongo:27017/geoapp
     depends_on:
       - mongo
-  
   mongo:
     image: mongo
     container_name: mongo
     ports:
       - "27017:27017"
     volumes:
-      - mongo-data:/data/db
+      - mongo_data:/data/db
 
 volumes:
-  mongo-data:
+  mongo_data:
