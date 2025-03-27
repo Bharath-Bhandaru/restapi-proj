@@ -5,7 +5,7 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const geolib = require("geolib");
 
-const app = express(); // ✅ Make sure this is at the top
+const app = express(); // ✅ Make sure this is at the top hghg
 
 // Serve the frontend static buil
 app.use(express.static(path.join(__dirname, "my-globe-app/dist")));
